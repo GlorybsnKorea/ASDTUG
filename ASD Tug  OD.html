@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASD Tug Simulator v14</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+#portGauge,#stbdGauge,#comboCanvas,#govCanvas{image-rendering:crisp-edges}
+body{width:100vw;height:100vh;overflow:hidden;background:#080e18;font-family:'Courier New',monospace;color:#c0d4e8;user-select:none;display:flex;flex-direction:column}
+#topbar{display:flex;align-items:center;justify-content:space-between;padding:5px 14px;background:rgba(8,16,30,0.95);border-bottom:1px solid rgba(70,130,200,0.15);font-size:11px;flex-shrink:0;flex-wrap:wrap;gap:10px}
+#seawrap{flex:1;position:relative;min-height:0}
+#seaCanvas{width:100%;height:100%;display:block}
+#keyhint{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.55);border-radius:5px;padding:6px 10px;font-size:10px;line-height:1.7;color:rgba(180,200,220,0.5);pointer-events:none}
+#controlPanel{background:linear-gradient(180deg,rgba(55,70,63,0.97),rgba(45,58,52,0.97));border-top:2px solid rgba(100,140,120,0.3);padding:10px;display:flex;align-items:center;justify-content:center;gap:14px;flex-shrink:0;flex-wrap:wrap;min-height:240px}
+.qbtn{background:rgba(100,170,240,0.07);border:1px solid rgba(100,170,240,0.15);color:#90b8d8;padding:3px 6px;border-radius:3px;cursor:pointer;font-size:9px;font-family:inherit}
+.qbtn:hover{background:rgba(100,170,240,0.2)}
+.gc{display:flex;flex-direction:column;align-items:center;gap:4px}
+.gt{font-size:10px;font-weight:700;letter-spacing:1px}
+#dbg{position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,0.7);border-radius:4px;padding:4px 8px;font-size:9px;color:#8a8;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="topbar">
+  <span style="color:#6ab4f5;font-weight:700;font-size:13px;letter-spacing:1px">&#9875; ASD TUG SIMULATOR <span style="color:#555;font-size:9px">v14</span></span>
+  <div style="display:flex;gap:16px;align-items:center">
+    <span>HDG <b id="valHdg" style="color:#edc740">000&#176;</b></span>
+    <span>SPD <b id="valSpd" style="color:#4dd88a">0.0 kts</b></span>
+    <span>STR <b id="valStr">0&#176;</b></span>
+    <span>GOV <b id="valGov" style="color:#f0a040">0</b></span>
+    <span id="playStatus" style="color:#888;font-weight:700">&#9632; STANDBY</span>
+    <button class="qbtn" onclick="doReset()">&#8634; RESET</button>
+  </div>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;min-height:0">
+  <div id="seawrap">
+    <canvas id="seaCanvas"></canvas>
+    <div id="keyhint">
+      <div><b style="color:rgba(200,220,240,0.7)">Steering</b>: A/D or C-wheel drag</div>
+      <div><b style="color:#d08080">Port THR</b>: W/S or lever drag</div>
+      <div><b style="color:#60c080">Stbd THR</b>: Up/Down or lever drag</div>
+      <div><b style="color:#f0a040">Governor</b>: Q/E or slider</div>
+      <div><b>Play/Stop</b>: P &nbsp; <b>E-Stop</b>: Space &nbsp; <b>Center</b>: R</div>
+    </div>
+    <div id="dbg"></div>
+  </div>
+  <div id="controlPanel">
+    <div class="gc">
+      <span class="gt" style="color:#d04040">PORT AZIMUTH</span>
+      <canvas id="portGauge" width="160" height="160"></canvas>
+    </div>
+    <canvas id="comboCanvas" width="260" height="220" style="cursor:grab;touch-action:none"></canvas>
+    <div class="gc">
+      <span class="gt" style="color:#30b560">STBD AZIMUTH</span>
+      <canvas id="stbdGauge" width="160" height="160"></canvas>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px;min-width:100px">
+      <div style="background:rgba(0,0,0,0.3);border-radius:4px;padding:6px 8px;width:100%">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:#d04040;font-size:9px">PORT</span><b id="vPT" style="font-size:11px;color:#888">STOP</b></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:#30b560;font-size:9px">STBD</span><b id="vST" style="font-size:11px;color:#888">STOP</b></div>
+      </div>
+      <span class="gt" style="color:#f0a040;margin-top:4px">GOVERNOR</span>
+      <canvas id="govCanvas" width="100" height="160" style="cursor:ns-resize;touch-action:none"></canvas>
+      <button class="qbtn" onclick="aS()">&#11036; ALL STOP</button>
+      <button id="playBtn" style="background:rgba(0,200,100,0.15);border:2px solid rgba(0,200,100,0.4);color:#00ff88;padding:6px 10px;border-radius:5px;cursor:pointer;font-size:12px;font-family:inherit;font-weight:700;letter-spacing:1px;margin-top:4px;width:100%" onclick="togglePlay()">&#9654; PLAY</button>
+    </div>
+  </div>
+</div>
+<script>
+"use strict";
+var D=Math.PI/180, R=180/Math.PI;
+var ship={x:80,y:0,vx:0,vy:0,hd:Math.PI/2,om:0,st:0,pt:0,sb:0,gov:0,wk:[],tr:[],tt:0};
+// Set y to screen center after canvas is ready
+function initShipPos(){ship.y=seaH/2;}
+var playing=false, pk={};
+document.addEventListener('keydown',function(e){
+  if((e.key==='p'||e.key==='P')&&!pk[e.key]) togglePlay();
+  pk[e.key]=true;
+  if([' ','ArrowUp','ArrowDown'].indexOf(e.key)!==-1)e.preventDefault();
+});
+document.addEventListener('keyup',function(e){pk[e.key]=false;});
+
+// ═══════════════════════════════════════════════════
+//  THRUST DIRECTION (where ship moves)
+//  0°=FWD(bow), 90°=STBD, 180°=AFT(stern), 270°=PORT
+// ═══════════════════════════════════════════════════
+// Port: neutral=270°(port outward), AH90=000°(fwd), AS90=180°(aft)
+// Stbd: neutral=090°(stbd outward), AH90=000°(fwd), AS90=180°(aft)
+function getPortThrust(lv,st){return((90-lv-st)%360+360)%360;}
+function getStbdThrust(lv,st){return((270+lv-st)%360+360)%360;}
+// Nozzle = thrust + 180°
+function getPortNozzle(lv,st){return((270-lv-st)%360+360)%360;}
+function getStbdNozzle(lv,st){return((90+lv-st)%360+360)%360;}
+
+// ═══════════════════════════════════════════════════
+//  360° GAUGE — needle tip=thrust direction, wide=exhaust
+// ═══════════════════════════════════════════════════
+function drawGauge(id,col,thrustDeg,leverVal){
+  var cv=document.getElementById(id),c=cv.getContext('2d');
+  var cx=80,cy=80,r=68;
+  c.clearRect(0,0,160,160);
+  // BG
+  c.beginPath();c.arc(cx,cy,r,0,Math.PI*2);c.fillStyle='#111';c.fill();
+  c.strokeStyle='rgba(100,110,90,0.35)';c.lineWidth=2;c.stroke();
+  // Ticks 360°
+  for(var i=0;i<360;i+=10){
+    var rad=(i-90)*D,mj=(i%30===0),oR=r-5,iR=mj?r-18:r-11;
+    c.beginPath();c.moveTo(cx+Math.cos(rad)*iR,cy+Math.sin(rad)*iR);
+    c.lineTo(cx+Math.cos(rad)*oR,cy+Math.sin(rad)*oR);
+    c.strokeStyle=mj?'rgba(220,230,220,0.7)':'rgba(200,210,200,0.2)';
+    c.lineWidth=mj?1.5:0.7;c.stroke();
+    if(mj){
+      var lr=r-26,lbl=('000'+i).slice(-3);
+      c.fillStyle=(i===0)?'#ffdd44':'#e0d870';
+      c.font=(i===0?'bold ':'')+'8px monospace';
+      c.textAlign='center';c.textBaseline='middle';
+      c.fillText(lbl,cx+Math.cos(rad)*lr,cy+Math.sin(rad)*lr);
+    }
+  }
+  c.font='bold 9px monospace';c.textAlign='center';c.textBaseline='middle';
+  c.fillStyle='#edc740';c.fillText('FWD',cx,cy-r+36);
+  c.fillStyle='#c0b870';c.fillText('AFT',cx,cy+r-34);
+  // Top marker
+  c.fillStyle='#edc740';c.beginPath();
+  c.moveTo(cx,cy-r-2);c.lineTo(cx-5,cy-r+6);c.lineTo(cx+5,cy-r+6);c.closePath();c.fill();
+
+  // ── TRIANGLE NEEDLE ──
+  // Narrow TIP → points to passed angle
+  // Wide BASE (180° opposite) → propeller exhaust/thrust direction
+  var nR=52,baseR=38,halfW=12;
+  var tipRad=(thrustDeg-90)*D;
+  var tipX=cx+Math.cos(tipRad)*nR, tipY=cy+Math.sin(tipRad)*nR;
+  var bRad=tipRad+Math.PI, pRad=tipRad+Math.PI/2;
+  var bX=cx+Math.cos(bRad)*baseR, bY=cy+Math.sin(bRad)*baseR;
+  var bLx=bX+Math.cos(pRad)*halfW, bLy=bY+Math.sin(pRad)*halfW;
+  var bRx=bX-Math.cos(pRad)*halfW, bRy=bY-Math.sin(pRad)*halfW;
+  // Shadow
+  c.beginPath();c.moveTo(tipX+1,tipY+1);c.lineTo(bLx+1,bLy+1);c.lineTo(bRx+1,bRy+1);c.closePath();
+  c.fillStyle='rgba(0,0,0,0.35)';c.fill();
+  // Body
+  c.beginPath();c.moveTo(tipX,tipY);c.lineTo(bLx,bLy);c.lineTo(bRx,bRy);c.closePath();
+  c.fillStyle=col;c.globalAlpha=0.75;c.fill();c.globalAlpha=1.0;
+  c.strokeStyle='rgba(255,255,255,0.25)';c.lineWidth=0.8;c.stroke();
+  // Centerline from hub to tip
+  c.beginPath();c.moveTo(cx,cy);c.lineTo(tipX,tipY);
+  c.strokeStyle='rgba(255,255,255,0.35)';c.lineWidth=1;c.stroke();
+  // "THR" label on wide base
+  c.fillStyle='#ffff00';c.font='bold 7px monospace';
+  c.textAlign='center';c.textBaseline='middle';
+  c.fillText('THR',bX,bY);
+  // Hub
+  c.beginPath();c.arc(cx,cy,5,0,Math.PI*2);c.fillStyle='#444';c.fill();
+  c.strokeStyle='rgba(200,210,200,0.4)';c.lineWidth=1;c.stroke();
+
+  // ── DIGITAL: AH/AS lever display ──
+  var lv=Math.round(leverVal),txt,tCol;
+  if(Math.abs(lv)<3){txt='0';tCol='#dddddd';}
+  else if(lv>0){txt='AH '+Math.abs(lv);tCol='#00ff88';}
+  else{txt='AS '+Math.abs(lv);tCol='#ff5555';}
+  rR(c,cx-26,cy+18,52,20,3);c.fillStyle='rgba(0,0,0,0.6)';c.fill();
+  c.strokeStyle='rgba(100,110,90,0.3)';c.lineWidth=0.5;c.stroke();
+  c.fillStyle=tCol;c.font='bold 11px monospace';c.textAlign='center';c.textBaseline='middle';
+  c.fillText(txt,cx,cy+28);
+  // Steering label
+  var sv=Math.round(ship.st);
+  var sT=(sv===0)?'STR 0\u00B0':(sv<0?'P'+Math.abs(sv)+'\u00B0':'S'+sv+'\u00B0');
+  c.fillStyle='#ffdd00';c.font='bold 9px monospace';c.fillText(sT,cx,cy+r-8);
+}
+
+function rR(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+w,y,x+w,y+r);c.lineTo(x+w,y+h-r);c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);c.lineTo(x+r,y+h);c.quadraticCurveTo(x,y+h,x,y+h-r);c.lineTo(x,y+r);c.quadraticCurveTo(x,y,x+r,y);c.closePath();}
+
+// ═══ GOVERNOR ═══
+var govCv=document.getElementById('govCanvas'),govCx=govCv.getContext('2d');
+function drawGov(){
+  var c=govCx;c.clearRect(0,0,100,160);
+  rR(c,5,5,90,150,6);c.fillStyle='rgba(30,30,25,0.9)';c.fill();
+  c.strokeStyle='rgba(150,160,130,0.3)';c.lineWidth=1;c.stroke();
+  var tX=35,tT=20,tB=140;
+  c.strokeStyle='rgba(200,180,100,0.2)';c.lineWidth=6;c.lineCap='round';
+  c.beginPath();c.moveTo(tX,tT);c.lineTo(tX,tB);c.stroke();c.lineCap='butt';
+  for(var i=0;i<=10;i++){
+    var yy=tB-(i/10)*(tB-tT);
+    c.beginPath();c.moveTo(tX-15,yy);c.lineTo(tX-8,yy);
+    c.strokeStyle=(i===0)?'#ff5050':(i===1)?'#50ff50':'#e0c840';
+    c.lineWidth=(i<=1)?1.5:1;c.stroke();
+    c.fillStyle=(i===0)?'#ff5050':(i===1)?'#50ff50':'#f0d850';
+    c.font='bold 9px monospace';
+    c.textAlign='right';c.textBaseline='middle';
+    c.fillText(''+i,tX-17,yy);
+  }
+  var hY=tB-(ship.gov/10)*(tB-tT);
+  rR(c,tX-6,hY-10,24,20,4);c.fillStyle=(ship.gov===0)?'#8a3535':'#b87020';c.fill();
+  c.strokeStyle='rgba(255,255,255,0.15)';c.lineWidth=1;c.stroke();
+  rR(c,tX-3,hY-5,18,10,2);c.fillStyle=(ship.gov===0)?'#a04040':'#d09030';c.fill();
+  // RPM digital readout: 0=410(CLUTCH OFF), 1=410(CLUTCH ON), 2~10=450~760
+  var rpm;
+  if(ship.gov<=1) rpm=410;
+  else rpm=Math.round(450+(ship.gov-2)*(310/8));
+  rR(c,tX+18,hY-11,42,22,3);c.fillStyle='rgba(0,0,0,0.85)';c.fill();
+  c.strokeStyle='rgba(240,210,60,0.3)';c.lineWidth=0.5;c.stroke();
+  c.fillStyle='#ffdd00';
+  c.font='bold 11px monospace';c.textAlign='center';c.textBaseline='middle';
+  c.fillText(rpm,tX+39,hY);
+}
+
+// ═══ CANVAS ═══
+var sc=document.getElementById('seaCanvas'),sx=sc.getContext('2d');
+var cc=document.getElementById('comboCanvas'),cx2=cc.getContext('2d');
+var seaW=0,seaH=0;
+function resz(){var w=document.getElementById('seawrap');seaW=w.clientWidth;seaH=w.clientHeight;sc.width=seaW;sc.height=seaH;}
+window.addEventListener('resize',resz);resz();initShipPos();
+
+// ═══ INPUT ═══
+function pI(){
+  if(pk['a']||pk['A'])ship.st=Math.max(-90,ship.st-0.6);
+  if(pk['d']||pk['D'])ship.st=Math.min(90,ship.st+0.6);
+  if(pk['r']||pk['R']){ship.st*=0.85;if(Math.abs(ship.st)<0.5)ship.st=0;}
+  if(pk['w']||pk['W'])ship.pt=Math.min(90,ship.pt+1.2);
+  if(pk['s']||pk['S'])ship.pt=Math.max(-90,ship.pt-1.2);
+  if(pk['ArrowUp'])ship.sb=Math.min(90,ship.sb+1.2);
+  if(pk['ArrowDown'])ship.sb=Math.max(-90,ship.sb-1.2);
+  if(pk['q']||pk['Q']){ship.gov=Math.min(10,ship.gov+0.15);ship.gov=Math.round(ship.gov*10)/10;}
+  if(pk['e']||pk['E']){ship.gov=Math.max(0,ship.gov-0.15);ship.gov=Math.round(ship.gov*10)/10;}
+  if(pk[' ']){ship.pt*=0.88;ship.sb*=0.88;ship.gov=Math.max(0,ship.gov-0.3);
+    if(Math.abs(ship.pt)<0.5)ship.pt=0;if(Math.abs(ship.sb)<0.5)ship.sb=0;
+    if(ship.gov<0.5){ship.gov=0;}}
+}
+
+// ═══ PHYSICS ═══
+var lt=0;
+function uP(){
+  var n=Date.now();
+  if(lt===0){lt=n;return;}
+  var dt=Math.min((n-lt)/16.67,3);lt=n;
+  var gp=ship.gov/10;
+  if(gp<0.01)return;
+
+  // Thrust direction per thruster
+  var ptThrDeg=getPortThrust(ship.pt,ship.st);
+  var sbThrDeg=getStbdThrust(ship.sb,ship.st);
+  var ptP=Math.abs(ship.pt/90)*gp;
+  var sbP=Math.abs(ship.sb/90)*gp;
+
+  // Ship-frame force (0°=FWD=-Y on screen, 90°=STBD=+X)
+  var ptRad=ptThrDeg*D, sbRad=sbThrDeg*D;
+  var sfx=Math.sin(ptRad)*ptP+Math.sin(sbRad)*sbP;
+  var sfy=-Math.cos(ptRad)*ptP-Math.cos(sbRad)*sbP;
+
+  // Ship→World rotation
+  var cH=Math.cos(ship.hd),sH=Math.sin(ship.hd);
+  ship.vx+=(sfx*cH-sfy*sH)*0.075*dt;
+  ship.vy+=(sfx*sH+sfy*cH)*0.075*dt;
+
+  // Torque: r×F for each thruster
+  // Port at (-12, 15) from center, Stbd at (12, 15) — 15 = stern offset
+  var ptFx=Math.sin(ptRad)*ptP, ptFy=-Math.cos(ptRad)*ptP;
+  var sbFx=Math.sin(sbRad)*sbP, sbFy=-Math.cos(sbRad)*sbP;
+  var tq=((-12)*ptFy-15*ptFx + 12*sbFy-15*sbFx)*0.00005;
+  ship.om+=tq*dt;
+
+  // Linear drag
+  ship.vx*=Math.pow(0.988,dt); ship.vy*=Math.pow(0.988,dt);
+  ship.om*=Math.pow(0.975,dt);
+
+  // Lateral drag (hull resists sideways more than forward)
+  var fwdUx=Math.sin(ship.hd), fwdUy=-Math.cos(ship.hd);
+  var latUx=Math.cos(ship.hd), latUy=Math.sin(ship.hd);
+  var fwdV=ship.vx*fwdUx+ship.vy*fwdUy;
+  var latV=ship.vx*latUx+ship.vy*latUy;
+  latV*=Math.pow(0.93,dt);
+  ship.vx=fwdV*fwdUx+latV*latUx;
+  ship.vy=fwdV*fwdUy+latV*latUy;
+
+  // Position
+  ship.x+=ship.vx*dt; ship.y+=ship.vy*dt; ship.hd+=ship.om*dt;
+
+  // Wake particles (screen coords)
+  var ap=ptP+sbP;
+  var sH2=Math.sin(ship.hd),cH2=Math.cos(ship.hd);
+  if(ap>0.03&&Math.random()<0.15+ap*0.3)
+    ship.wk.push({x:ship.x-sH2*34+(Math.random()-0.5)*18,y:ship.y+cH2*34+(Math.random()-0.5)*18,l:1,r:2+Math.random()*4});
+  for(var i=ship.wk.length-1;i>=0;i--){ship.wk[i].l-=0.005*dt;ship.wk[i].r+=0.1*dt;if(ship.wk[i].l<=0)ship.wk.splice(i,1);}
+  ship.tt+=dt;
+  if(ship.tt>4){ship.tt=0;ship.tr.push({x:ship.x,y:ship.y,l:1});if(ship.tr.length>500)ship.tr.shift();}
+  for(var i=ship.tr.length-1;i>=0;i--){ship.tr[i].l-=0.0006*dt;if(ship.tr[i].l<=0)ship.tr.splice(i,1);}
+}
+
+// ═══ SEA VIEW ═══
+function dSea(){
+  var c=sx,W=seaW,H=seaH;
+  c.clearRect(0,0,W,H);
+  // Fixed ocean background
+  c.fillStyle='#05101c';c.fillRect(0,0,W,H);
+  // Fixed grid
+  var gs=60;
+  c.strokeStyle='rgba(18,55,100,0.12)';c.lineWidth=0.7;
+  for(var i=0;i<W;i+=gs){c.beginPath();c.moveTo(i,0);c.lineTo(i,H);c.stroke();}
+  for(var i=0;i<H;i+=gs){c.beginPath();c.moveTo(0,i);c.lineTo(W,i);c.stroke();}
+  // Trail (screen coords)
+  for(var i=0;i<ship.tr.length;i++){var t=ship.tr[i];c.beginPath();c.arc(t.x,t.y,1.5,0,Math.PI*2);c.fillStyle='rgba(60,140,240,'+t.l*0.2+')';c.fill();}
+  // Wake (screen coords)
+  for(var i=0;i<ship.wk.length;i++){var w=ship.wk[i];c.beginPath();c.arc(w.x,w.y,w.r,0,Math.PI*2);c.strokeStyle='rgba(110,180,250,'+w.l*0.2+')';c.lineWidth=1;c.stroke();}
+  // Ship at its actual screen position
+  c.save();c.translate(ship.x,ship.y);c.rotate(ship.hd);
+  c.save();c.translate(2,3);dHL(c,'rgba(0,0,0,0.3)');c.restore();dHL(c,'#1a2838');
+  c.fillStyle='#232f3e';c.fillRect(-13,3,26,22);
+  c.fillStyle='#384858';c.fillRect(-4,20,8,5);
+  c.fillStyle='#2a3a4c';c.fillRect(-9,-13,18,14);
+  c.fillStyle='rgba(85,165,250,0.28)';c.fillRect(-7,-11,14,5);
+  c.fillStyle='#4a5a68';c.fillRect(-1,-19,2,7);
+  c.fillStyle='#ffcc44';c.beginPath();c.arc(0,-20,1.8,0,Math.PI*2);c.fill();
+  c.strokeStyle='rgba(200,50,50,0.5)';c.lineWidth=2.5;c.beginPath();c.arc(0,-34,11,-0.6,Math.PI+0.6,true);c.stroke();
+  c.strokeStyle='rgba(210,50,50,0.2)';c.lineWidth=1.5;c.beginPath();c.moveTo(-16,-8);c.lineTo(-16,22);c.stroke();
+  c.strokeStyle='rgba(50,200,80,0.2)';c.beginPath();c.moveTo(16,-8);c.lineTo(16,22);c.stroke();
+  var ptNoz=getPortNozzle(ship.pt,ship.st);
+  var sbNoz=getStbdNozzle(ship.sb,ship.st);
+  var gp=ship.gov/10;
+  dPod(c,-12,29,ptNoz,Math.abs(ship.pt/90)*gp,'#d04040');
+  dPod(c,12,29,sbNoz,Math.abs(ship.sb/90)*gp,'#30b560');
+  c.restore();
+  // Compass at top-right
+  dCmp(c,W-50,50,ship.hd);
+}
+function dHL(c,cl){c.fillStyle=cl;c.beginPath();c.moveTo(-15,30);c.lineTo(-17,10);c.lineTo(-15,-14);c.lineTo(-9,-28);c.quadraticCurveTo(0,-36,9,-28);c.lineTo(15,-14);c.lineTo(17,10);c.lineTo(15,30);c.closePath();c.fill();}
+
+function dPod(c,x,y,nozDeg,pw,co){
+  c.save();c.translate(x,y);
+  c.fillStyle='#222';c.beginPath();c.arc(0,0,5,0,Math.PI*2);c.fill();
+  c.strokeStyle=co;c.lineWidth=1.2;c.stroke();
+  c.rotate(nozDeg*D);
+  c.fillStyle='#3a3a3a';c.fillRect(-2.5,-7,5,14);
+  c.strokeStyle=co;c.lineWidth=1.5;c.beginPath();c.moveTo(-6,0);c.lineTo(6,0);c.stroke();
+  // Propeller spin when governor on
+  if(ship.gov>0){c.beginPath();c.arc(0,0,3,0,Math.PI*2);c.fillStyle='rgba(100,255,200,0.4)';c.fill();}
+  if(pw>0.02){
+    var len=5+pw*18,al=0.3+pw*0.5,wd=1.5+pw*2;
+    // Exhaust arrow in nozzle direction (-Y in rotated frame)
+    c.strokeStyle='rgba(70,220,255,'+al+')';c.lineWidth=wd;
+    c.beginPath();c.moveTo(0,-3);c.lineTo(0,-3-len);c.stroke();
+    c.strokeStyle='rgba(70,220,255,'+(al*0.25)+')';c.lineWidth=wd+4;
+    c.beginPath();c.moveTo(0,-5);c.lineTo(0,-3-len*0.7);c.stroke();
+    var tY=-3-len;
+    c.fillStyle='rgba(70,220,255,'+al+')';
+    c.beginPath();c.moveTo(0,tY-4);c.lineTo(-4,tY+2);c.lineTo(4,tY+2);c.closePath();c.fill();
+  }
+  c.restore();
+}
+
+function dCmp(c,cx,cy,h){
+  c.save();c.translate(cx,cy);
+  c.fillStyle='rgba(0,0,0,0.45)';c.beginPath();c.arc(0,0,30,0,Math.PI*2);c.fill();
+  c.strokeStyle='rgba(70,140,210,0.3)';c.lineWidth=1.5;c.stroke();
+  c.save();c.rotate(-h);
+  var d=['N','E','S','W'];
+  for(var i=0;i<4;i++){c.save();c.rotate(i*Math.PI/2);c.fillStyle=i===0?'#d44':'rgba(170,200,230,0.55)';c.font='bold '+(i===0?11:9)+'px monospace';c.textAlign='center';c.fillText(d[i],0,-20);c.restore();}
+  c.restore();
+  c.fillStyle='#5ae';c.beginPath();c.moveTo(0,-29);c.lineTo(-3,-24);c.lineTo(3,-24);c.closePath();c.fill();
+  c.restore();
+}
+
+// ═══ COMBO HANDLE ═══
+var AS=-28*D,AE=-152*D;
+function dCH(){
+  var c=cx2;c.clearRect(0,0,260,220);c.save();c.translate(130,118);
+  c.beginPath();c.arc(0,0,94,AS,AE,false);c.strokeStyle='#1a1a1a';c.lineWidth=24;c.lineCap='round';c.stroke();c.lineCap='butt';
+  var mj=[-90,-60,-30,0,30,60,90];
+  for(var i=0;i<mj.length;i++){var a=mj[i],rd=(a-90)*D,co=Math.cos(rd),si=Math.sin(rd);
+    c.beginPath();c.moveTo(co*78,si*78);c.lineTo(co*106,si*106);c.strokeStyle='rgba(200,210,190,0.4)';c.lineWidth=1.5;c.stroke();
+    c.fillStyle='rgba(200,210,190,0.8)';c.font='bold 10px monospace';c.textAlign='center';c.fillText(Math.abs(a),co*66,si*66+4);}
+  for(var i=0;i<=36;i++){var a=-90+i*5;if(a%30===0)continue;var rd=(a-90)*D;c.beginPath();c.moveTo(Math.cos(rd)*84,Math.sin(rd)*84);c.lineTo(Math.cos(rd)*104,Math.sin(rd)*104);c.strokeStyle='rgba(200,210,190,0.12)';c.lineWidth=0.6;c.stroke();}
+  c.fillStyle='#d04040';c.font='bold 13px monospace';c.textAlign='center';c.fillText('P',-64,-60);
+  c.fillStyle='#30b560';c.fillText('S',64,-60);
+  c.fillStyle='#edc740';c.beginPath();c.moveTo(0,-110);c.lineTo(-5,-102);c.lineTo(5,-102);c.closePath();c.fill();
+  rR(c,-34,-28,68,56,6);c.fillStyle='rgba(38,38,32,0.93)';c.fill();c.strokeStyle='rgba(150,160,130,0.35)';c.lineWidth=1;c.stroke();
+  c.fillStyle='#c0b870';c.font='bold 7px monospace';c.textAlign='center';c.fillText('AH90',0,-20);
+  c.fillStyle='#a0986a';c.font='bold 5px monospace';c.fillText('60',0,-11);
+  c.setLineDash([2,2]);c.strokeStyle='rgba(200,200,170,0.35)';c.lineWidth=0.5;c.beginPath();c.moveTo(-28,0);c.lineTo(28,0);c.stroke();c.setLineDash([]);
+  c.fillStyle='#e0d060';c.font='bold 8px monospace';c.fillText('0',0,4);
+  c.fillStyle='#a0986a';c.font='bold 5px monospace';c.fillText('60',0,15);
+  c.fillStyle='#c0b870';c.font='bold 7px monospace';c.fillText('AS90',0,24);
+  var py=-(ship.pt/90)*22;
+  c.strokeStyle='rgba(200,80,80,0.15)';c.lineWidth=6;c.lineCap='round';c.beginPath();c.moveTo(-15,-22);c.lineTo(-15,22);c.stroke();c.lineCap='butt';
+  rR(c,-23,py-7,16,14,3);c.fillStyle='#b83535';c.fill();rR(c,-21,py-4,12,8,2);c.fillStyle='#d55';c.fill();
+  c.fillStyle='#d04040';c.font='bold 8px monospace';c.textAlign='center';c.fillText('P',-15,-26);
+  var sy=-(ship.sb/90)*22;
+  c.strokeStyle='rgba(50,180,100,0.15)';c.lineWidth=6;c.lineCap='round';c.beginPath();c.moveTo(15,-22);c.lineTo(15,22);c.stroke();c.lineCap='butt';
+  rR(c,7,sy-7,16,14,3);c.fillStyle='#268a45';c.fill();rR(c,9,sy-4,12,8,2);c.fillStyle='#3d6';c.fill();
+  c.fillStyle='#30b560';c.font='bold 8px monospace';c.textAlign='center';c.fillText('S',15,-26);
+  c.beginPath();c.arc(0,0,8,0,Math.PI*2);c.fillStyle='#3a3a35';c.fill();c.strokeStyle='#555';c.lineWidth=1;c.stroke();
+  c.beginPath();c.arc(0,0,4,0,Math.PI*2);c.fillStyle='#666';c.fill();
+  c.save();c.rotate(ship.st*D);
+  c.beginPath();c.arc(0,0,94,AS,AE,false);c.strokeStyle='#484848';c.lineWidth=16;c.lineCap='round';c.stroke();
+  c.beginPath();c.arc(0,0,94,AS,AE,false);c.strokeStyle='rgba(180,180,170,0.12)';c.lineWidth=12;c.stroke();c.lineCap='butt';
+  c.restore();
+  // ── Moving black arrow indicator on fixed scale ──
+  // Follows steering angle along the outer scale (0°~90° range)
+  var stRad=(ship.st-90)*D;
+  var arR=112; // radius outside the scale ticks
+  var ax=Math.cos(stRad)*arR, ay=Math.sin(stRad)*arR;
+  // Arrow pointing inward (toward center)
+  var inRad=stRad+Math.PI; // points inward
+  var pRad=stRad+Math.PI/2;
+  c.fillStyle='#111';c.beginPath();
+  c.moveTo(ax+Math.cos(inRad)*20,ay+Math.sin(inRad)*20);
+  c.lineTo(ax+Math.cos(pRad)*10,ay+Math.sin(pRad)*10);
+  c.lineTo(ax-Math.cos(pRad)*10,ay-Math.sin(pRad)*10);
+  c.closePath();c.fill();
+  c.strokeStyle='rgba(255,255,255,0.2)';c.lineWidth=0.8;c.stroke();
+  c.restore();
+}
+
+// ═══ HUD ═══
+function uH(){
+  var spd=Math.sqrt(ship.vx*ship.vx+ship.vy*ship.vy);
+  document.getElementById('valHdg').textContent=('000'+Math.round(((ship.hd*R)+360)%360)).slice(-3)+'\u00B0';
+  document.getElementById('valSpd').textContent=(spd*20).toFixed(1)+' kts';
+  var st=Math.round(ship.st),e=document.getElementById('valStr');
+  if(st<0){e.textContent='P'+Math.abs(st)+'\u00B0';e.style.color='#d04040';}
+  else if(st>0){e.textContent='S'+st+'\u00B0';e.style.color='#30b560';}
+  else{e.textContent='0\u00B0';e.style.color='#888';}
+  var govRpm;
+  if(ship.gov<=1) govRpm=410;
+  else govRpm=Math.round(450+(ship.gov-2)*(310/8));
+  document.getElementById('valGov').textContent=govRpm+' RPM';
+  var ps=document.getElementById('playStatus');
+  if(playing){ps.innerHTML='&#9654; RUNNING';ps.style.color='#00ff88';}
+  else{ps.innerHTML='&#9632; STANDBY';ps.style.color='#888';}
+  function tL(v){var a=Math.abs(Math.round(v));if(a<3)return'STOP';return(v>0?'AH ':'AS ')+a;}
+  function tC(v){if(Math.abs(v)<3)return'#888';return v>0?'#4dd88a':'#ee6655';}
+  document.getElementById('vPT').textContent=tL(ship.pt);document.getElementById('vPT').style.color=tC(ship.pt);
+  document.getElementById('vST').textContent=tL(ship.sb);document.getElementById('vST').style.color=tC(ship.sb);
+  // Debug info
+  var gp=ship.gov/10;
+  var ptP=Math.abs(ship.pt/90)*gp,sbP=Math.abs(ship.sb/90)*gp;
+  var ptTip=getPortThrust(ship.pt,ship.st);
+  var sbTip=getStbdThrust(ship.sb,ship.st);
+  var gp2=ship.gov/10;
+  var ptP2=Math.abs(ship.pt/90)*gp2,sbP2=Math.abs(ship.sb/90)*gp2;
+  var spd2=Math.sqrt(ship.vx*ship.vx+ship.vy*ship.vy);
+  document.getElementById('dbg').textContent=
+    'PT:'+ship.pt.toFixed(0)+' SB:'+ship.sb.toFixed(0)+' ST:'+ship.st.toFixed(0)+
+    ' GOV:'+ship.gov+' PWR:'+ptP2.toFixed(2)+'/'+sbP2.toFixed(2)+
+    ' | thr:P'+ptTip.toFixed(0)+'\u00B0 S'+sbTip.toFixed(0)+'\u00B0'+
+    ' | pos:'+ship.x.toFixed(1)+','+ship.y.toFixed(1)+
+    ' spd:'+spd2.toFixed(3)+' '+(playing?'▶PLAY':'■STOP');
+}
+
+// ═══ MOUSE / TOUCH ═══
+var dragMode=null,wSA=0,wSS=0;
+cc.addEventListener('mousedown',function(e){startCD(e);});
+cc.addEventListener('touchstart',function(e){e.preventDefault();startCD(e);},{passive:false});
+function startCD(e){
+  var r=cc.getBoundingClientRect(),cX=e.touches?e.touches[0].clientX:e.clientX,cY=e.touches?e.touches[0].clientY:e.clientY;
+  var mx=cX-r.left-130,my=cY-r.top-118;
+  if(mx>-28&&mx<0&&my>-32&&my<32){dragMode='pt';return;}
+  if(mx>=0&&mx<28&&my>-32&&my<32){dragMode='sb';return;}
+  dragMode='wh';wSA=Math.atan2(cX-r.left-130,-(cY-r.top-118))*R;wSS=ship.st;
+}
+govCv.addEventListener('mousedown',function(e){dragMode='gv';doGov(e);});
+govCv.addEventListener('touchstart',function(e){e.preventDefault();dragMode='gv';doGov(e);},{passive:false});
+window.addEventListener('mousemove',function(e){if(!dragMode)return;if(dragMode==='wh')doSt(e);else if(dragMode==='pt'||dragMode==='sb')doTh(e);else if(dragMode==='gv')doGov(e);});
+window.addEventListener('touchmove',function(e){if(!dragMode)return;e.preventDefault();if(dragMode==='wh')doSt(e);else if(dragMode==='pt'||dragMode==='sb')doTh(e);else if(dragMode==='gv')doGov(e);},{passive:false});
+window.addEventListener('mouseup',function(){dragMode=null;});
+window.addEventListener('touchend',function(){dragMode=null;});
+function doSt(e){
+  var r=cc.getBoundingClientRect(),cX=e.touches?e.touches[0].clientX:e.clientX,cY=e.touches?e.touches[0].clientY:e.clientY;
+  var cur=Math.atan2(cX-r.left-130,-(cY-r.top-118))*R;
+  ship.st=Math.max(-90,Math.min(90,wSS+(cur-wSA)));
+}
+function doTh(e){
+  var r=cc.getBoundingClientRect(),cY=e.touches?e.touches[0].clientY:e.clientY;
+  var v=Math.max(-90,Math.min(90,((r.top+118-cY)/55)*90));
+  if(dragMode==='pt')ship.pt=v;else if(dragMode==='sb')ship.sb=v;
+}
+function doGov(e){
+  var r=govCv.getBoundingClientRect(),cY=e.touches?e.touches[0].clientY:e.clientY;
+  var tT=r.top+20,tB=r.top+140;
+  ship.gov=Math.max(0,Math.min(10,Math.round((1-(cY-tT)/(tB-tT))*10)));
+}
+function togglePlay(){
+  playing=!playing;
+  var b=document.getElementById('playBtn');
+  if(playing){b.innerHTML='&#9632; STOP';b.style.background='rgba(255,60,60,0.15)';b.style.borderColor='rgba(255,60,60,0.4)';b.style.color='#ff4444';lt=0;}
+  else{b.innerHTML='&#9654; PLAY';b.style.background='rgba(0,200,100,0.15)';b.style.borderColor='rgba(0,200,100,0.4)';b.style.color='#00ff88';ship.x=80;ship.y=seaH/2;ship.vx=0;ship.vy=0;ship.om=0;ship.hd=Math.PI/2;ship.tr=[];ship.wk=[];}
+}
+function aS(){
+  ship.pt=0;ship.sb=0;ship.st=0;ship.gov=0;ship.vx=0;ship.vy=0;ship.om=0;
+  playing=false;var b=document.getElementById('playBtn');
+  b.innerHTML='&#9654; PLAY';b.style.background='rgba(0,200,100,0.15)';b.style.borderColor='rgba(0,200,100,0.4)';b.style.color='#00ff88';
+}
+function doReset(){ship.x=80;ship.y=seaH/2;ship.vx=0;ship.vy=0;ship.hd=Math.PI/2;ship.om=0;ship.st=0;ship.pt=0;ship.sb=0;ship.gov=0;ship.tr=[];ship.wk=[];aS();}
+
+// ═══ MAIN LOOP ═══
+function mainLoop(){
+  pI();
+  if(playing)uP();
+  dSea();dCH();drawGov();
+  // Gauges: needle tip = thrust direction (matching physics)
+  drawGauge('portGauge','#d04040',getPortThrust(ship.pt,ship.st),ship.pt);
+  drawGauge('stbdGauge','#30b560',getStbdThrust(ship.sb,ship.st),ship.sb);
+  uH();
+  requestAnimationFrame(mainLoop);
+}
+mainLoop();
+</script>
+</body>
+</html>
