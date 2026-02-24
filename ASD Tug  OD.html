@@ -445,35 +445,100 @@ function uH(){
     ' spd:'+spd2.toFixed(3)+' '+(playing?'▶PLAY':'■STOP');
 }
 
-// ═══ MOUSE / TOUCH ═══
-var dragMode=null,wSA=0,wSS=0;
-cc.addEventListener('mousedown',function(e){startCD(e);});
-cc.addEventListener('touchstart',function(e){e.preventDefault();startCD(e);},{passive:false});
-function startCD(e){
-  var r=cc.getBoundingClientRect(),cX=e.touches?e.touches[0].clientX:e.clientX,cY=e.touches?e.touches[0].clientY:e.clientY;
+// ═══ MOUSE / TOUCH (MULTI-TOUCH SUPPORT) ═══
+var mouseDrag=null,wSA=0,wSS=0;
+var touches={};  // touchId → {mode, wSA, wSS}
+
+function hitTest(cX,cY){
+  var r=cc.getBoundingClientRect();
   var mx=cX-r.left-130,my=cY-r.top-118;
-  if(mx>-28&&mx<0&&my>-32&&my<32){dragMode='pt';return;}
-  if(mx>=0&&mx<28&&my>-32&&my<32){dragMode='sb';return;}
-  dragMode='wh';wSA=Math.atan2(cX-r.left-130,-(cY-r.top-118))*R;wSS=ship.st;
+  if(mx>-28&&mx<0&&my>-32&&my<32) return 'pt';
+  if(mx>=0&&mx<28&&my>-32&&my<32) return 'sb';
+  return 'wh';
 }
-govCv.addEventListener('mousedown',function(e){dragMode='gv';doGov(e);});
-govCv.addEventListener('touchstart',function(e){e.preventDefault();dragMode='gv';doGov(e);},{passive:false});
-window.addEventListener('mousemove',function(e){if(!dragMode)return;if(dragMode==='wh')doSt(e);else if(dragMode==='pt'||dragMode==='sb')doTh(e);else if(dragMode==='gv')doGov(e);});
-window.addEventListener('touchmove',function(e){if(!dragMode)return;e.preventDefault();if(dragMode==='wh')doSt(e);else if(dragMode==='pt'||dragMode==='sb')doTh(e);else if(dragMode==='gv')doGov(e);},{passive:false});
-window.addEventListener('mouseup',function(){dragMode=null;});
-window.addEventListener('touchend',function(){dragMode=null;});
-function doSt(e){
-  var r=cc.getBoundingClientRect(),cX=e.touches?e.touches[0].clientX:e.clientX,cY=e.touches?e.touches[0].clientY:e.clientY;
+function hitTestGov(cX,cY){
+  var r=govCv.getBoundingClientRect();
+  return cX>=r.left&&cX<=r.right&&cY>=r.top&&cY<=r.bottom;
+}
+
+// ── Mouse (single drag) ──
+cc.addEventListener('mousedown',function(e){
+  var mode=hitTest(e.clientX,e.clientY);
+  mouseDrag=mode;
+  if(mode==='wh'){wSA=Math.atan2(e.clientX-cc.getBoundingClientRect().left-130,-(e.clientY-cc.getBoundingClientRect().top-118))*R;wSS=ship.st;}
+});
+govCv.addEventListener('mousedown',function(e){mouseDrag='gv';doGovXY(e.clientY);});
+window.addEventListener('mousemove',function(e){
+  if(!mouseDrag)return;
+  if(mouseDrag==='wh')doStXY(e.clientX,e.clientY);
+  else if(mouseDrag==='pt'||mouseDrag==='sb')doThXY(e.clientY,mouseDrag);
+  else if(mouseDrag==='gv')doGovXY(e.clientY);
+});
+window.addEventListener('mouseup',function(){mouseDrag=null;});
+
+// ── Touch (multi-touch) ──
+cc.addEventListener('touchstart',function(e){
+  e.preventDefault();
+  for(var i=0;i<e.changedTouches.length;i++){
+    var t=e.changedTouches[i];
+    var mode=hitTest(t.clientX,t.clientY);
+    var info={mode:mode};
+    if(mode==='wh'){
+      info.wSA=Math.atan2(t.clientX-cc.getBoundingClientRect().left-130,-(t.clientY-cc.getBoundingClientRect().top-118))*R;
+      info.wSS=ship.st;
+    }
+    touches[t.identifier]=info;
+  }
+},{passive:false});
+
+govCv.addEventListener('touchstart',function(e){
+  e.preventDefault();
+  for(var i=0;i<e.changedTouches.length;i++){
+    var t=e.changedTouches[i];
+    touches[t.identifier]={mode:'gv'};
+    doGovXY(t.clientY);
+  }
+},{passive:false});
+
+window.addEventListener('touchmove',function(e){
+  var hasActive=false;
+  for(var k in touches){hasActive=true;break;}
+  if(!hasActive)return;
+  e.preventDefault();
+  for(var i=0;i<e.changedTouches.length;i++){
+    var t=e.changedTouches[i];
+    var info=touches[t.identifier];
+    if(!info)continue;
+    if(info.mode==='wh')doStXYTouch(t.clientX,t.clientY,info);
+    else if(info.mode==='pt'||info.mode==='sb')doThXY(t.clientY,info.mode);
+    else if(info.mode==='gv')doGovXY(t.clientY);
+  }
+},{passive:false});
+
+window.addEventListener('touchend',function(e){
+  for(var i=0;i<e.changedTouches.length;i++) delete touches[e.changedTouches[i].identifier];
+});
+window.addEventListener('touchcancel',function(e){
+  for(var i=0;i<e.changedTouches.length;i++) delete touches[e.changedTouches[i].identifier];
+});
+
+function doStXY(cX,cY){
+  var r=cc.getBoundingClientRect();
   var cur=Math.atan2(cX-r.left-130,-(cY-r.top-118))*R;
   ship.st=Math.max(-90,Math.min(90,wSS+(cur-wSA)));
 }
-function doTh(e){
-  var r=cc.getBoundingClientRect(),cY=e.touches?e.touches[0].clientY:e.clientY;
-  var v=Math.max(-90,Math.min(90,((r.top+118-cY)/55)*90));
-  if(dragMode==='pt')ship.pt=v;else if(dragMode==='sb')ship.sb=v;
+function doStXYTouch(cX,cY,info){
+  var r=cc.getBoundingClientRect();
+  var cur=Math.atan2(cX-r.left-130,-(cY-r.top-118))*R;
+  ship.st=Math.max(-90,Math.min(90,info.wSS+(cur-info.wSA)));
 }
-function doGov(e){
-  var r=govCv.getBoundingClientRect(),cY=e.touches?e.touches[0].clientY:e.clientY;
+function doThXY(cY,mode){
+  var r=cc.getBoundingClientRect();
+  var v=Math.max(-90,Math.min(90,((r.top+118-cY)/55)*90));
+  if(mode==='pt')ship.pt=v;else if(mode==='sb')ship.sb=v;
+}
+function doGovXY(cY){
+  var r=govCv.getBoundingClientRect();
   var tT=r.top+20,tB=r.top+140;
   ship.gov=Math.max(0,Math.min(10,Math.round((1-(cY-tT)/(tB-tT))*10)));
 }
@@ -505,3 +570,4 @@ mainLoop();
 </script>
 </body>
 </html>
+
