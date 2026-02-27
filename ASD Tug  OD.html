@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 <title>ASD Tug Simulator v14</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -12,7 +12,7 @@ body{width:100vw;height:100vh;overflow:hidden;background:#080e18;font-family:'Co
 #seawrap{flex:3;position:relative;min-height:0}
 #seaCanvas{width:100%;height:100%;display:block}
 #keyhint{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.55);border-radius:5px;padding:6px 10px;font-size:10px;line-height:1.7;color:rgba(180,200,220,0.5);pointer-events:none}
-#controlWrap{flex:7;display:flex;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(180deg,rgba(55,70,63,0.97),rgba(45,58,52,0.97));border-top:2px solid rgba(100,140,120,0.3);touch-action:none}
+#controlWrap{flex:7;display:flex;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(180deg,rgba(55,70,63,0.97),rgba(45,58,52,0.97));border-top:2px solid rgba(100,140,120,0.3);touch-action:pinch-zoom}
 #controlPanel{padding:4px 10px;display:flex;align-items:center;justify-content:center;gap:14px;transform-origin:center center}
 .qbtn{background:rgba(100,170,240,0.07);border:1px solid rgba(100,170,240,0.15);color:#90b8d8;padding:3px 6px;border-radius:3px;cursor:pointer;font-size:9px;font-family:inherit}
 .qbtn:hover{background:rgba(100,170,240,0.2)}
@@ -51,7 +51,7 @@ body{width:100vw;height:100vh;overflow:hidden;background:#080e18;font-family:'Co
       <span class="gt" style="color:#d04040">PORT AZIMUTH</span>
       <canvas id="portGauge" width="160" height="160"></canvas>
     </div>
-    <canvas id="comboCanvas" width="260" height="220" style="cursor:grab;touch-action:none"></canvas>
+    <canvas id="comboCanvas" width="260" height="220" style="cursor:grab;touch-action:pinch-zoom"></canvas>
     <div class="gc">
       <span class="gt" style="color:#30b560">STBD AZIMUTH</span>
       <canvas id="stbdGauge" width="160" height="160"></canvas>
@@ -62,7 +62,7 @@ body{width:100vw;height:100vh;overflow:hidden;background:#080e18;font-family:'Co
         <div style="display:flex;justify-content:space-between"><span style="color:#30b560;font-size:9px">STBD</span><b id="vST" style="font-size:11px;color:#888">STOP</b></div>
       </div>
       <span class="gt" style="color:#f0a040;margin-top:4px">GOVERNOR</span>
-      <canvas id="govCanvas" width="100" height="160" style="cursor:ns-resize;touch-action:none"></canvas>
+      <canvas id="govCanvas" width="100" height="160" style="cursor:ns-resize;touch-action:pinch-zoom"></canvas>
       <button class="qbtn" onclick="aS()">&#11036; ALL STOP</button>
       <button id="playBtn" style="background:rgba(0,200,100,0.15);border:2px solid rgba(0,200,100,0.4);color:#00ff88;padding:6px 10px;border-radius:5px;cursor:pointer;font-size:12px;font-family:inherit;font-weight:700;letter-spacing:1px;margin-top:4px;width:100%" onclick="togglePlay()">&#9654; PLAY</button>
     </div>
@@ -605,3 +605,4 @@ mainLoop();
 </script>
 </body>
 </html>
+
