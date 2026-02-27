@@ -9,14 +9,15 @@
 #portGauge,#stbdGauge,#comboCanvas,#govCanvas{image-rendering:crisp-edges}
 body{width:100vw;height:100vh;overflow:hidden;background:#080e18;font-family:'Courier New',monospace;color:#c0d4e8;user-select:none;display:flex;flex-direction:column}
 #topbar{display:flex;align-items:center;justify-content:space-between;padding:5px 14px;background:rgba(8,16,30,0.95);border-bottom:1px solid rgba(70,130,200,0.15);font-size:11px;flex-shrink:0;flex-wrap:wrap;gap:10px}
-#seawrap{flex:1;position:relative;min-height:0}
+#seawrap{flex:3;position:relative;min-height:0}
 #seaCanvas{width:100%;height:100%;display:block}
 #keyhint{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.55);border-radius:5px;padding:6px 10px;font-size:10px;line-height:1.7;color:rgba(180,200,220,0.5);pointer-events:none}
-#controlPanel{background:linear-gradient(180deg,rgba(55,70,63,0.97),rgba(45,58,52,0.97));border-top:2px solid rgba(100,140,120,0.3);padding:10px;display:flex;align-items:center;justify-content:center;gap:14px;flex-shrink:0;flex-wrap:wrap;min-height:240px}
+#controlWrap{flex:7;display:flex;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(180deg,rgba(55,70,63,0.97),rgba(45,58,52,0.97));border-top:2px solid rgba(100,140,120,0.3);touch-action:none}
+#controlPanel{padding:4px 10px;display:flex;align-items:center;justify-content:center;gap:14px;transform-origin:center center}
 .qbtn{background:rgba(100,170,240,0.07);border:1px solid rgba(100,170,240,0.15);color:#90b8d8;padding:3px 6px;border-radius:3px;cursor:pointer;font-size:9px;font-family:inherit}
 .qbtn:hover{background:rgba(100,170,240,0.2)}
-.gc{display:flex;flex-direction:column;align-items:center;gap:4px}
-.gt{font-size:10px;font-weight:700;letter-spacing:1px}
+.gc{display:flex;flex-direction:column;align-items:center;gap:1px}
+.gt{font-size:9px;font-weight:700;letter-spacing:1px}
 #dbg{position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,0.7);border-radius:4px;padding:4px 8px;font-size:9px;color:#8a8;pointer-events:none}
 </style>
 </head>
@@ -44,6 +45,7 @@ body{width:100vw;height:100vh;overflow:hidden;background:#080e18;font-family:'Co
     </div>
     <div id="dbg"></div>
   </div>
+  <div id="controlWrap">
   <div id="controlPanel">
     <div class="gc">
       <span class="gt" style="color:#d04040">PORT AZIMUTH</span>
@@ -65,13 +67,19 @@ body{width:100vw;height:100vh;overflow:hidden;background:#080e18;font-family:'Co
       <button id="playBtn" style="background:rgba(0,200,100,0.15);border:2px solid rgba(0,200,100,0.4);color:#00ff88;padding:6px 10px;border-radius:5px;cursor:pointer;font-size:12px;font-family:inherit;font-weight:700;letter-spacing:1px;margin-top:4px;width:100%" onclick="togglePlay()">&#9654; PLAY</button>
     </div>
   </div>
+  </div>
 </div>
 <script>
 "use strict";
 var D=Math.PI/180, R=180/Math.PI;
 var ship={x:80,y:0,vx:0,vy:0,hd:Math.PI/2,om:0,st:0,pt:0,sb:0,gov:0,wk:[],tr:[],tt:0};
 // Set y to screen center after canvas is ready
-function initShipPos(){ship.y=seaH/2;}
+function initShipPos(){
+  ship.y=seaH/2;
+  // 안내 카드 오른쪽에서 시작
+  var hint=document.getElementById('keyhint');
+  ship.x=hint?(hint.offsetLeft+hint.offsetWidth+60):Math.round(seaW*0.3);
+}
 var playing=false, pk={};
 document.addEventListener('keydown',function(e){
   if((e.key==='p'||e.key==='P')&&!pk[e.key]) togglePlay();
@@ -107,21 +115,28 @@ function drawGauge(id,col,thrustDeg,leverVal){
     var rad=(i-90)*D,mj=(i%30===0),oR=r-5,iR=mj?r-18:r-11;
     c.beginPath();c.moveTo(cx+Math.cos(rad)*iR,cy+Math.sin(rad)*iR);
     c.lineTo(cx+Math.cos(rad)*oR,cy+Math.sin(rad)*oR);
-    c.strokeStyle=mj?'rgba(220,230,220,0.7)':'rgba(200,210,200,0.2)';
-    c.lineWidth=mj?1.5:0.7;c.stroke();
+    c.strokeStyle=mj?'rgba(255,255,255,0.85)':'rgba(200,210,200,0.25)';
+    c.lineWidth=mj?1.8:0.7;c.stroke();
     if(mj){
-      var lr=r-26,lbl=('000'+i).slice(-3);
-      c.fillStyle=(i===0)?'#ffdd44':'#e0d870';
-      c.font=(i===0?'bold ':'')+'8px monospace';
+      var lr=r-26;
+      // Steering angle: top=AH90, sides=0, bottom=AS90
+      var sv=(i<=180)?(90-i):(i-270);
+      var lbl;
+      if(sv>0) lbl='AH'+sv;
+      else if(sv<0) lbl='AS'+Math.abs(sv);
+      else lbl='0';
+      // Colors: AH=cyan, AS=orange, 0=white, AH90=bright yellow
+      if(i===0) c.fillStyle='#ffee55';
+      else if(sv>0) c.fillStyle='#66ffcc';
+      else if(sv<0) c.fillStyle='#ffaa55';
+      else c.fillStyle='#ffffff';
+      c.font='bold 8px "Courier New",monospace';
       c.textAlign='center';c.textBaseline='middle';
       c.fillText(lbl,cx+Math.cos(rad)*lr,cy+Math.sin(rad)*lr);
     }
   }
-  c.font='bold 9px monospace';c.textAlign='center';c.textBaseline='middle';
-  c.fillStyle='#edc740';c.fillText('FWD',cx,cy-r+36);
-  c.fillStyle='#c0b870';c.fillText('AFT',cx,cy+r-34);
   // Top marker
-  c.fillStyle='#edc740';c.beginPath();
+  c.fillStyle='#ffee55';c.beginPath();
   c.moveTo(cx,cy-r-2);c.lineTo(cx-5,cy-r+6);c.lineTo(cx+5,cy-r+6);c.closePath();c.fill();
 
   // ── TRIANGLE NEEDLE ──
@@ -161,10 +176,6 @@ function drawGauge(id,col,thrustDeg,leverVal){
   c.strokeStyle='rgba(100,110,90,0.3)';c.lineWidth=0.5;c.stroke();
   c.fillStyle=tCol;c.font='bold 11px monospace';c.textAlign='center';c.textBaseline='middle';
   c.fillText(txt,cx,cy+28);
-  // Steering label
-  var sv=Math.round(ship.st);
-  var sT=(sv===0)?'STR 0\u00B0':(sv<0?'P'+Math.abs(sv)+'\u00B0':'S'+sv+'\u00B0');
-  c.fillStyle='#ffdd00';c.font='bold 9px monospace';c.fillText(sT,cx,cy+r-8);
 }
 
 function rR(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+w,y,x+w,y+r);c.lineTo(x+w,y+h-r);c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);c.lineTo(x+r,y+h);c.quadraticCurveTo(x,y+h,x,y+h-r);c.lineTo(x,y+r);c.quadraticCurveTo(x,y,x+r,y);c.closePath();}
@@ -201,13 +212,31 @@ function drawGov(){
   c.fillStyle='#ffdd00';
   c.font='bold 11px monospace';c.textAlign='center';c.textBaseline='middle';
   c.fillText(rpm,tX+39,hY);
+  // Clutch indicator
+  var clTxt=ship.gov===0?'CLT OFF':'CLT ON';
+  var clCol=ship.gov===0?'#ff4444':'#44ff88';
+  c.fillStyle=clCol;c.font='bold 8px monospace';c.textAlign='center';
+  c.fillText(clTxt,50,152);
 }
 
 // ═══ CANVAS ═══
 var sc=document.getElementById('seaCanvas'),sx=sc.getContext('2d');
 var cc=document.getElementById('comboCanvas'),cx2=cc.getContext('2d');
 var seaW=0,seaH=0;
-function resz(){var w=document.getElementById('seawrap');seaW=w.clientWidth;seaH=w.clientHeight;sc.width=seaW;sc.height=seaH;}
+function resz(){
+  var w=document.getElementById('seawrap');seaW=w.clientWidth;seaH=w.clientHeight;sc.width=seaW;sc.height=seaH;
+  // Auto-scale controlPanel to fit controlWrap
+  var cp=document.getElementById('controlPanel');
+  var cw=document.getElementById('controlWrap');
+  if(cp&&cw){
+    cp.style.transform='none';
+    void cp.offsetWidth;
+    var pw=cp.scrollWidth, ph=cp.scrollHeight;
+    var ww=cw.clientWidth, wh=cw.clientHeight;
+    var s=Math.min(ww/(pw+20), wh/(ph+10), 3);
+    cp.style.transform='scale('+s+')';
+  }
+}
 window.addEventListener('resize',resz);resz();initShipPos();
 
 // ═══ INPUT ═══
@@ -248,8 +277,8 @@ function uP(){
 
   // Ship→World rotation
   var cH=Math.cos(ship.hd),sH=Math.sin(ship.hd);
-  ship.vx+=(sfx*cH-sfy*sH)*0.075*dt;
-  ship.vy+=(sfx*sH+sfy*cH)*0.075*dt;
+  ship.vx+=(sfx*cH-sfy*sH)*0.0375*dt;
+  ship.vy+=(sfx*sH+sfy*cH)*0.0375*dt;
 
   // Torque: r×F for each thruster
   // Port at (-12, 15) from center, Stbd at (12, 15) — 15 = stern offset
@@ -451,7 +480,7 @@ var touches={};  // touchId → {mode, wSA, wSS}
 
 function hitTest(cX,cY){
   var r=cc.getBoundingClientRect();
-  var mx=cX-r.left-130,my=cY-r.top-118;
+  var mx=(cX-r.left)/r.width*260-130, my=(cY-r.top)/r.height*220-118;
   if(mx>-28&&mx<0&&my>-32&&my<32) return 'pt';
   if(mx>=0&&mx<28&&my>-32&&my<32) return 'sb';
   return 'wh';
@@ -465,7 +494,7 @@ function hitTestGov(cX,cY){
 cc.addEventListener('mousedown',function(e){
   var mode=hitTest(e.clientX,e.clientY);
   mouseDrag=mode;
-  if(mode==='wh'){wSA=Math.atan2(e.clientX-cc.getBoundingClientRect().left-130,-(e.clientY-cc.getBoundingClientRect().top-118))*R;wSS=ship.st;}
+  if(mode==='wh'){var r=cc.getBoundingClientRect();var ix=(e.clientX-r.left)/r.width*260-130;var iy=(e.clientY-r.top)/r.height*220-118;wSA=Math.atan2(ix,-iy)*R;wSS=ship.st;}
 });
 govCv.addEventListener('mousedown',function(e){mouseDrag='gv';doGovXY(e.clientY);});
 window.addEventListener('mousemove',function(e){
@@ -484,7 +513,8 @@ cc.addEventListener('touchstart',function(e){
     var mode=hitTest(t.clientX,t.clientY);
     var info={mode:mode};
     if(mode==='wh'){
-      info.wSA=Math.atan2(t.clientX-cc.getBoundingClientRect().left-130,-(t.clientY-cc.getBoundingClientRect().top-118))*R;
+      var r=cc.getBoundingClientRect();var ix=(t.clientX-r.left)/r.width*260-130;var iy=(t.clientY-r.top)/r.height*220-118;
+      info.wSA=Math.atan2(ix,-iy)*R;
       info.wSS=ship.st;
     }
     touches[t.identifier]=info;
@@ -524,36 +554,41 @@ window.addEventListener('touchcancel',function(e){
 
 function doStXY(cX,cY){
   var r=cc.getBoundingClientRect();
-  var cur=Math.atan2(cX-r.left-130,-(cY-r.top-118))*R;
+  var ix=(cX-r.left)/r.width*260-130, iy=(cY-r.top)/r.height*220-118;
+  var cur=Math.atan2(ix,-iy)*R;
   ship.st=Math.max(-90,Math.min(90,wSS+(cur-wSA)));
 }
 function doStXYTouch(cX,cY,info){
   var r=cc.getBoundingClientRect();
-  var cur=Math.atan2(cX-r.left-130,-(cY-r.top-118))*R;
+  var ix=(cX-r.left)/r.width*260-130, iy=(cY-r.top)/r.height*220-118;
+  var cur=Math.atan2(ix,-iy)*R;
   ship.st=Math.max(-90,Math.min(90,info.wSS+(cur-info.wSA)));
 }
 function doThXY(cY,mode){
   var r=cc.getBoundingClientRect();
-  var v=Math.max(-90,Math.min(90,((r.top+118-cY)/55)*90));
+  var iy=(cY-r.top)/r.height*220;
+  var v=Math.max(-90,Math.min(90,((118-iy)/55)*90));
   if(mode==='pt')ship.pt=v;else if(mode==='sb')ship.sb=v;
 }
 function doGovXY(cY){
   var r=govCv.getBoundingClientRect();
-  var tT=r.top+20,tB=r.top+140;
-  ship.gov=Math.max(0,Math.min(10,Math.round((1-(cY-tT)/(tB-tT))*10)));
+  var iy=(cY-r.top)/r.height*160;
+  var tT=20,tB=140;
+  ship.gov=Math.max(0,Math.min(10,Math.round((1-(iy-tT)/(tB-tT))*10)));
 }
+function getShipStartX(){var h=document.getElementById('keyhint');return h?(h.offsetLeft+h.offsetWidth+60):Math.round(seaW*0.3);}
 function togglePlay(){
   playing=!playing;
   var b=document.getElementById('playBtn');
   if(playing){b.innerHTML='&#9632; STOP';b.style.background='rgba(255,60,60,0.15)';b.style.borderColor='rgba(255,60,60,0.4)';b.style.color='#ff4444';lt=0;}
-  else{b.innerHTML='&#9654; PLAY';b.style.background='rgba(0,200,100,0.15)';b.style.borderColor='rgba(0,200,100,0.4)';b.style.color='#00ff88';ship.x=80;ship.y=seaH/2;ship.vx=0;ship.vy=0;ship.om=0;ship.hd=Math.PI/2;ship.tr=[];ship.wk=[];}
+  else{b.innerHTML='&#9654; PLAY';b.style.background='rgba(0,200,100,0.15)';b.style.borderColor='rgba(0,200,100,0.4)';b.style.color='#00ff88';ship.x=getShipStartX();ship.y=seaH/2;ship.vx=0;ship.vy=0;ship.om=0;ship.hd=Math.PI/2;ship.tr=[];ship.wk=[];}
 }
 function aS(){
   ship.pt=0;ship.sb=0;ship.st=0;ship.gov=0;ship.vx=0;ship.vy=0;ship.om=0;
   playing=false;var b=document.getElementById('playBtn');
   b.innerHTML='&#9654; PLAY';b.style.background='rgba(0,200,100,0.15)';b.style.borderColor='rgba(0,200,100,0.4)';b.style.color='#00ff88';
 }
-function doReset(){ship.x=80;ship.y=seaH/2;ship.vx=0;ship.vy=0;ship.hd=Math.PI/2;ship.om=0;ship.st=0;ship.pt=0;ship.sb=0;ship.gov=0;ship.tr=[];ship.wk=[];aS();}
+function doReset(){ship.x=getShipStartX();ship.y=seaH/2;ship.vx=0;ship.vy=0;ship.hd=Math.PI/2;ship.om=0;ship.st=0;ship.pt=0;ship.sb=0;ship.gov=0;ship.tr=[];ship.wk=[];aS();}
 
 // ═══ MAIN LOOP ═══
 function mainLoop(){
